@@ -1,0 +1,14 @@
+node_modules
+.next
+.env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+/storage
+coverage
+/storage-test
+
+# Yerel geliştirme becerileri (skills) — repoya dahil edilmez
+.agents/
+.claude/
+skills-lock.json

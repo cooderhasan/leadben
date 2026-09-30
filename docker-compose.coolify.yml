@@ -1,0 +1,77 @@
+# Coolify için: Yeni Kaynak → "Docker Compose" → bu dosya (docker-compose.coolify.yml)
+# SERVICE_* değişkenlerini Coolify otomatik üretir (şifreler, alan adı).
+# Elle girmeniz gereken tek değer: ANTHROPIC_API_KEY
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - SERVICE_FQDN_APP_3000
+      - APP_URL=${SERVICE_FQDN_APP}
+      - DATABASE_URL=postgresql://salesos:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/salesos?schema=public
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # OpenAI veya OpenAI uyumlu servis (OpenRouter): AI_PROVIDER=openai + OPENAI_BASE_URL
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - AI_PROVIDER=${AI_PROVIDER:-anthropic}
+      - AI_MODEL=${AI_MODEL:-claude-sonnet-5}
+      - AI_FAST_MODEL=${AI_FAST_MODEL:-claude-haiku-4-5-20251001}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-none}
+      - APIFY_TOKEN=${APIFY_TOKEN:-}
+      - LEAD_SEARCH_MAX=${LEAD_SEARCH_MAX:-50}
+      # E-posta gönderimi (Faz 3): EMAIL_PROVIDER boşsa gönderim kapalıdır
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
+      - EMAIL_DAILY_LIMIT=${EMAIL_DAILY_LIMIT:-50}
+      - UNSUBSCRIBE_SECRET=${SERVICE_PASSWORD_64_UNSUBSCRIBE}
+      - EMAIL_WEBHOOK_SECRET=${SERVICE_PASSWORD_64_EMAILWEBHOOK}
+      # Gelen yanıtlar (IMAP, salt okunur): boşsa kapalı
+      - IMAP_HOST=${IMAP_HOST:-}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - IMAP_SECURE=${IMAP_SECURE:-true}
+      - IMAP_USER=${IMAP_USER:-}
+      - IMAP_PASS=${IMAP_PASS:-}
+      - IMAP_MAILBOX=${IMAP_MAILBOX:-INBOX}
+      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}
+      # Şirket gizli anahtarlarını (WhatsApp erişim anahtarı, webhook sırları) şifreler — değiştirilirse kayıtlı anahtarlar yeniden girilmeli
+      - ENCRYPTION_KEY=${SERVICE_PASSWORD_64_ENCRYPTION}
+      - QUEUE_DRIVER=inline
+      - STORAGE_DRIVER=local
+      - STORAGE_LOCAL_DIR=/app/storage
+      - ALLOW_SIGNUP=${ALLOW_SIGNUP:-true}
+      - SIGNUP_CREDITS=${SIGNUP_CREDITS:-100}
+      - SEED_ON_START=${SEED_ON_START:-true}
+      - SEED_DEMO_EMAIL=${SEED_DEMO_EMAIL:-demo@aktifyay.local}
+      - SEED_DEMO_PASSWORD=${SERVICE_PASSWORD_DEMO}
+      - SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-admin@aisalesos.local}
+      - SEED_ADMIN_PASSWORD=${SERVICE_PASSWORD_ADMIN}
+    volumes:
+      - app-storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_USER=salesos
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=salesos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U salesos -d salesos"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  app-storage:
+  pgdata:

@@ -1,0 +1,1532 @@
+// AI Sales OS — Prisma şeması
+// Tüm fazları kapsar. Faz 1 yalnızca kimlik, şirket, ürün, bilgi bankası, fact ve job tablolarını kullanır.
+// KURAL: müşteri verisi taşıyan her model `companyId` içerir ve servisler yalnızca tenantDb() üzerinden erişir.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  /// Rust query engine yerine TS query compiler + @prisma/adapter-pg (Windows'ta binary indirme gerektirmez)
+  engineType      = "client"
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// ─────────────────────────────────────────────────────────────
+// ENUMLAR
+// ─────────────────────────────────────────────────────────────
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum FactSource {
+  WEBSITE
+  DOCUMENT
+  USER
+  SEED
+  AI_INFERRED
+}
+
+enum FactStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum DocumentKind {
+  CATALOG
+  PRODUCT_LIST
+  PRICE_LIST
+  TECHNICAL
+  CERTIFICATE
+  FAQ
+  SALES_RULES
+  CASE_STUDY
+  OTHER
+}
+
+enum DocumentOrigin {
+  UPLOAD
+  WEBSITE
+  MANUAL
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum MemoryType {
+  RULE
+  PREFERENCE
+  FACT
+}
+
+enum MemoryStatus {
+  ACTIVE
+  PENDING
+  ARCHIVED
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum AnalysisStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum AnalysisTarget {
+  OWN_COMPANY
+  LEAD
+  COMPETITOR
+}
+
+enum LeadStatus {
+  NEW
+  RESEARCHING
+  QUALIFIED
+  CONTACT_READY
+  CONTACTED
+  REPLIED
+  INTERESTED
+  QUALIFIED_OPPORTUNITY
+  QUOTE_REQUESTED
+  PROPOSAL_SENT
+  NEGOTIATION
+  WON
+  LOST
+  NURTURE
+  SUPPRESSED
+}
+
+enum LeadSourceType {
+  GOOGLE_MAPS
+  COMPANY_WEBSITE
+  INSTAGRAM
+  WEB_SEARCH
+  DIRECTORY
+  PUBLIC_REGISTRY
+  THIRD_PARTY_DATA
+  CSV_IMPORT
+  MANUAL
+}
+
+enum ContactType {
+  COMPANY_GENERIC
+  PERSONAL
+}
+
+enum CommunicationBasis {
+  NONE
+  B2B_TRADER_ADDRESS
+  EXPLICIT_CONSENT
+  EXISTING_RELATIONSHIP
+  INBOUND_REQUEST
+}
+
+enum ConsentStatus {
+  UNKNOWN
+  GRANTED
+  DENIED
+  WITHDRAWN
+}
+
+enum ComplianceStatus {
+  SENDABLE
+  REVIEW_REQUIRED
+  DO_NOT_SEND
+}
+
+/// Telefon araması sonucu (arama listesi)
+enum CallOutcome {
+  NO_ANSWER
+  BUSY
+  WRONG_NUMBER
+  CALL_BACK
+  NOT_INTERESTED
+  INTERESTED
+  CATALOG_REQUESTED
+  MEETING_SET
+  WHATSAPP_CONSENT
+  EMAIL_OBTAINED
+  DO_NOT_CALL
+}
+
+enum SuppressionType {
+  EMAIL
+  DOMAIN
+  PHONE
+  LEAD
+}
+
+enum SuppressionSource {
+  UNSUBSCRIBE_LINK
+  REPLY
+  MANUAL
+  BOUNCE
+  COMPLAINT
+}
+
+enum SignalType {
+  NEW_FACILITY
+  NEW_PRODUCTION_LINE
+  CAPACITY_EXPANSION
+  NEW_PRODUCT
+  HIRING
+  INVESTMENT
+  NEW_CUSTOMER
+  EXPORT_EXPANSION
+  MACHINE_INVESTMENT
+  LINE_CHANGE
+  SUPPLIER_SEARCH
+  TENDER
+  SOCIAL_ANNOUNCEMENT
+  WEBSITE_CHANGE
+  OTHER
+}
+
+enum CampaignStatus {
+  DRAFT
+  STRATEGY_REVIEW
+  READY
+  RUNNING
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum Channel {
+  EMAIL
+  WHATSAPP
+  PHONE
+  LINKEDIN_MANUAL
+  INSTAGRAM_MANUAL
+}
+
+enum MessageDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum MessageStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SCHEDULED
+  SENT
+  DELIVERED
+  BOUNCED
+  FAILED
+  CANCELLED
+}
+
+enum ReplyCategory {
+  INTERESTED
+  NOT_INTERESTED
+  PRICING
+  CATALOG_REQUEST
+  TECHNICAL_QUESTION
+  REQUEST_FOR_CALL
+  REQUEST_FOR_QUOTE
+  LATER
+  WRONG_CONTACT
+  UNSUBSCRIBE
+  UNKNOWN
+}
+
+enum OpportunityStage {
+  NEW
+  QUALIFIED
+  CONTACTED
+  INTERESTED
+  QUOTE
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum LostReason {
+  PRICE
+  DELIVERY
+  PRODUCT_MISMATCH
+  COMPETITOR
+  TIMING
+  NO_RESPONSE
+  WRONG_CONTACT
+  OTHER
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  SENT
+  SKIPPED
+  CANCELLED
+}
+
+enum ProposalStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum InsightStatus {
+  NEW
+  DISMISSED
+  ACTED
+}
+
+enum ActorType {
+  USER
+  AI
+  SYSTEM
+}
+
+enum Plan {
+  STARTER
+  GROWTH
+  PRO
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+enum IntegrationType {
+  EMAIL_PROVIDER
+  LEAD_SOURCE
+  AI_PROVIDER
+  WHATSAPP_BUSINESS
+  STORAGE
+  PAYMENT
+}
+
+enum IntegrationStatus {
+  NOT_CONFIGURED
+  ACTIVE
+  ERROR
+  DISABLED
+}
+
+// ─────────────────────────────────────────────────────────────
+// KİMLİK
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  name            String
+  passwordHash    String?
+  isPlatformAdmin Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  accounts    Account[]
+  sessions    Session[]
+  memberships CompanyMember[]
+}
+
+/// OAuth hesapları için hazır (Faz 2+). Parola girişi User.passwordHash kullanır.
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id              String   @id @default(cuid())
+  /// Cookie'deki tokenın SHA-256 hash'i. Ham token DB'de tutulmaz.
+  tokenHash       String   @unique
+  userId          String
+  activeCompanyId String?
+  expiresAt       DateTime
+  userAgent       String?
+  ip              String?
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// ŞİRKET (TENANT)
+// ─────────────────────────────────────────────────────────────
+
+model Company {
+  id                    String    @id @default(cuid())
+  name                  String
+  slug                  String    @unique
+  website               String?
+  country               String?
+  city                  String?
+  creditBalance         Int       @default(0)
+  onboardingStep        Int       @default(0)
+  onboardingCompletedAt DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  members            CompanyMember[]
+  profile            CompanyProfile?
+  facts              CompanyFact[]
+  memories           CompanyMemory[]
+  targetMarkets      TargetMarket[]
+  productCategories  ProductCategory[]
+  products           Product[]
+  documents          KnowledgeDocument[]
+  chunks             KnowledgeChunk[]
+  websiteAnalyses    WebsiteAnalysis[]
+  leads              Lead[]
+  leadContacts       LeadContact[]
+  leadSources        LeadSource[]
+  leadSignals        LeadSignal[]
+  leadScores         LeadScore[]
+  campaigns          Campaign[]
+  campaignLeads      CampaignLead[]
+  campaignSteps      CampaignStep[]
+  messages           Message[]
+  conversations      Conversation[]
+  conversationMsgs   ConversationMessage[]
+  opportunities      Opportunity[]
+  tasks              Task[]
+  callLogs           CallLog[]
+  leadLists          LeadList[]
+  followUps          FollowUp[]
+  proposals          Proposal[]
+  competitors        Competitor[]
+  competitorSignals  CompetitorSignal[]
+  insights           AIInsight[]
+  complianceRecords  ComplianceRecord[]
+  suppressionRecords SuppressionRecord[]
+  usageRecords       UsageRecord[]
+  aiUsageLogs        AIUsageLog[]
+  auditLogs          AuditLog[]
+  subscription       Subscription?
+  integrations       Integration[]
+  jobs               Job[]
+  apiKeys            ApiKey[]
+  webhookEndpoints   WebhookEndpoint[]
+}
+
+model CompanyMember {
+  id        String     @id @default(cuid())
+  companyId String
+  userId    String
+  role      MemberRole @default(MEMBER)
+  createdAt DateTime   @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([userId])
+}
+
+/// Onboarding'de toplanan yapılandırılmış şirket bilgisi.
+/// Kullanıcının kendi girdiği alanlar doğrudan doğrulanmış kabul edilir;
+/// AI'ın çıkardıkları ise CompanyFact (PENDING) olarak ayrı tutulur.
+model CompanyProfile {
+  id        String @id @default(cuid())
+  companyId String @unique
+
+  // Firma bilgileri
+  sector         String?
+  subSector      String?
+  serviceRegions String[]
+  sizeBand       String?
+  employeeCount  Int?
+  description    String?
+
+  // "Firmayı böyle anladım" özeti
+  aiSummary       String?
+  aiSummaryStatus FactStatus @default(PENDING)
+
+  // Ürün / üretim
+  minOrder            String?
+  priceRangeNote      String?
+  avgOrderValue       Decimal? @db.Decimal(14, 2)
+  productionCapacity  String?
+  deliveryTime        String?
+  customManufacturing Boolean?
+
+  // Satış bilgileri
+  currency                 String   @default("TRY")
+  avgSaleValue             Decimal? @db.Decimal(14, 2)
+  salesCycleDays           Int?
+  monthlySalesTarget       Decimal? @db.Decimal(14, 2)
+  existingCustomerTypes    String[]
+  existingCustomerExamples String[]
+
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// AI'ın veya kullanıcının şirket hakkında kaydettiği tekil bilgi.
+/// Satış mesajı / teklif üretimi YALNIZCA status=VERIFIED olanları kullanır.
+model CompanyFact {
+  id           String     @id @default(cuid())
+  companyId    String
+  key          String
+  value        String
+  source       FactSource
+  sourceRef    String?
+  status       FactStatus @default(PENDING)
+  confidence   Float?
+  analysisId   String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  company  Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  analysis WebsiteAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status])
+  @@index([companyId, key])
+}
+
+/// Şirketin AI ile konuşmalarından öğrenilen kurallar ve tercihler.
+/// Ör. "Almanya'da 5.000 adetten düşük siparişlerle ilgilenmiyoruz."
+model CompanyMemory {
+  id          String       @id @default(cuid())
+  companyId   String
+  type        MemoryType
+  content     String
+  /// Makine tarafından uygulanabilir kural (Faz 3 Sales Rule Engine), ör. {"country":"DE","minQuantity":5000,"effect":"deprioritize"}
+  structured  Json?
+  status      MemoryStatus @default(ACTIVE)
+  source      FactSource   @default(USER)
+  createdById String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
+}
+
+/// Hedef müşteri tanımı. isExcluded=true → istenmeyen müşteri profili.
+model TargetMarket {
+  id                 String   @id @default(cuid())
+  companyId          String
+  name               String
+  isExcluded         Boolean  @default(false)
+  businessModel      String?
+  industries         String[]
+  subIndustries      String[]
+  countries          String[]
+  cities             String[]
+  minEmployees       Int?
+  maxEmployees       Int?
+  minRevenue         Decimal? @db.Decimal(16, 2)
+  customerTypes      String[]
+  decisionMakerRoles String[]
+  priority           Int      @default(0)
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+
+  @@index([companyId, isExcluded])
+}
+
+// ─────────────────────────────────────────────────────────────
+// ÜRÜNLER VE BİLGİ BANKASI
+// ─────────────────────────────────────────────────────────────
+
+model ProductCategory {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  parentId  String?
+  createdAt DateTime @default(now())
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  parent   ProductCategory?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children ProductCategory[] @relation("CategoryTree")
+  products Product[]
+
+  @@unique([companyId, name])
+}
+
+model Product {
+  id             String     @id @default(cuid())
+  companyId      String
+  categoryId     String?
+  name           String
+  sku            String?
+  description    String?
+  /// Serbest anahtar/değer teknik özellikler, ör. {"telÇapı":"0.2–12 mm"}
+  technicalSpecs Json?
+  materials      String[]
+  dimensions     String?
+  applications   String[]
+  industries     String[]
+  minOrder       String?
+  priceRange     String?
+  deliveryTime   String?
+  certifications String[]
+  active         Boolean    @default(true)
+  /// AI'ın dokümandan çıkardığı ürünler PENDING başlar; satışta yalnızca VERIFIED kullanılır.
+  status         FactStatus @default(VERIFIED)
+  source         FactSource @default(USER)
+  sourceRef      String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category  ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  documents ProductDocument[]
+  campaigns Campaign[]
+
+  @@index([companyId, active])
+  @@index([companyId, status])
+  @@index([companyId, categoryId])
+}
+
+model ProductDocument {
+  id         String   @id @default(cuid())
+  companyId  String
+  productId  String
+  documentId String
+  createdAt  DateTime @default(now())
+
+  product  Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, documentId])
+  @@index([companyId])
+}
+
+model KnowledgeDocument {
+  id           String         @id @default(cuid())
+  companyId    String
+  title        String
+  kind         DocumentKind   @default(OTHER)
+  origin       DocumentOrigin @default(UPLOAD)
+  status       DocumentStatus @default(UPLOADED)
+  /// Şirket bu dokümanın içeriğini satış iletişiminde kullanmaya onay verdi mi?
+  verified     Boolean        @default(false)
+  storageKey   String?
+  url          String?
+  mimeType     String?
+  sizeBytes    Int?
+  pageCount    Int?
+  charCount    Int?
+  error        String?
+  uploadedById String?
+  jobId        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  chunks   KnowledgeChunk[]
+  products ProductDocument[]
+
+  @@index([companyId, status])
+  @@index([companyId, kind])
+}
+
+/// RAG parçası. Arama her zaman companyId filtresiyle yapılır.
+/// Tam metin araması için content üzerinde GIN ifade indeksi migration SQL'inde tanımlıdır.
+model KnowledgeChunk {
+  id             String                 @id @default(cuid())
+  companyId      String
+  documentId     String
+  index          Int
+  content        String
+  tokenCount     Int
+  embedding      Unsupported("vector")?
+  embeddingModel String?
+  createdAt      DateTime               @default(now())
+
+  company  Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, index])
+  @@index([companyId])
+}
+
+/// Web sitesi / URL analizi geçmişi. Kendi şirketi (onboarding), lead veya rakip için kullanılır.
+model WebsiteAnalysis {
+  id          String         @id @default(cuid())
+  companyId   String
+  target      AnalysisTarget @default(OWN_COMPANY)
+  targetId    String?
+  url         String
+  status      AnalysisStatus @default(QUEUED)
+  pages       Json?
+  result      Json?
+  summary     String?
+  error       String?
+  jobId       String?
+  createdById String?
+  createdAt   DateTime       @default(now())
+  completedAt DateTime?
+
+  company Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  facts   CompanyFact[]
+
+  @@index([companyId, target, createdAt])
+}
+
+/// Global sektör taksonomisi (tenant'a ait değil).
+model Industry {
+  id       String     @id @default(cuid())
+  key      String     @unique
+  nameTr   String
+  nameEn   String
+  parentId String?
+  parent   Industry?  @relation("IndustryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Industry[] @relation("IndustryTree")
+  leads    Lead[]
+}
+
+// ─────────────────────────────────────────────────────────────
+// LEAD (FAZ 2)
+// ─────────────────────────────────────────────────────────────
+
+model Lead {
+  id               String       @id @default(cuid())
+  companyId        String
+  companyName      String
+  normalizedName   String
+  domain           String?
+  website          String?
+  industry         String?
+  subIndustry      String?
+  industryId       String?
+  country          String?
+  city             String?
+  district         String?
+  address          String?
+  /// Şirket genel telefonu (kişisel değil)
+  phone            String?
+  normalizedPhone  String?
+  /// Şirket genel e-postası (info@, satis@…). Kişisel adresler LeadContact'ta.
+  genericEmail     String?
+  /// E-posta bulunamadığında tespit edilen iletişim formu sayfası. Form otomatik DOLDURULMAZ;
+  /// kullanıcı sayfayı açıp mesajı kendi gönderir (bkz. spec: bot gönderimi yapılmaz).
+  contactFormUrl   String?
+  instagram        String?
+  linkedin         String?
+  facebook         String?
+  socialProfiles   Json?
+  employeeCountMin Int?
+  employeeCountMax Int?
+  status           LeadStatus   @default(NEW)
+  fitScore         Int?
+  suppressed       Boolean      @default(false)
+  aiSummary        String?
+  /// AI araştırma çıktısı: {verified:[…], assumptions:[…]} ayrımıyla
+  enrichment       Json?
+  discoveredAt     DateTime     @default(now())
+  lastVerifiedAt   DateTime?
+  nextRefreshAt    DateTime?
+  /// Arama listesi: bir sonraki arama zamanı, son sonuç; callAttempts = arka arkaya ulaşılamayan deneme
+  nextCallAt       DateTime?
+  lastCallAt       DateTime?
+  lastCallOutcome  CallOutcome?
+  callAttempts     Int          @default(0)
+  /// Firmadan sorumlu ekip üyesi (aramayı / içe aktarmayı yapan kişi; sonradan değiştirilebilir)
+  ownerId          String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  company       Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lists         LeadListItem[]
+  industryRef   Industry?          @relation(fields: [industryId], references: [id], onDelete: SetNull)
+  calls         CallLog[]
+  contacts      LeadContact[]
+  sources       LeadSource[]
+  signals       LeadSignal[]
+  scores        LeadScore[]
+  campaignLeads CampaignLead[]
+  messages      Message[]
+  conversations Conversation[]
+  opportunities Opportunity[]
+  tasks         Task[]
+  followUps     FollowUp[]
+  proposals     Proposal[]
+  compliance    ComplianceRecord[]
+
+  @@index([companyId, status])
+  @@index([companyId, ownerId])
+  @@index([companyId, fitScore])
+  @@index([companyId, domain])
+  @@index([companyId, normalizedPhone])
+  @@index([companyId, normalizedName])
+  @@index([companyId, city])
+  @@index([companyId, nextRefreshAt])
+}
+
+/// Kişisel iletişim bilgisi — şirket genel iletişiminden ayrı veri tipi (KVKK).
+/// Lead listesi: her arama / içe aktarma otomatik bir liste oluşturur; elle de oluşturulabilir.
+model LeadList {
+  id          String       @id @default(cuid())
+  companyId   String
+  name        String
+  kind        LeadListKind @default(MANUAL)
+  createdById String?
+  /// Listeyi oluşturan iş (arama / içe aktarma) — tekrar oluşturmayı önler
+  jobId       String?
+  createdAt   DateTime     @default(now())
+
+  company Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items   LeadListItem[]
+
+  @@unique([companyId, jobId])
+  @@index([companyId, createdAt])
+}
+
+model LeadListItem {
+  listId    String
+  leadId    String
+  companyId String
+  addedAt   DateTime @default(now())
+
+  list LeadList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  lead Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@id([listId, leadId])
+  @@index([companyId, leadId])
+}
+
+enum LeadListKind {
+  SEARCH
+  IMPORT
+  MANUAL
+}
+
+model LeadContact {
+  id                 String             @id @default(cuid())
+  companyId          String
+  leadId             String
+  type               ContactType        @default(PERSONAL)
+  fullName           String?
+  title              String?
+  email              String?
+  phone              String?
+  linkedinUrl        String?
+  source             LeadSourceType
+  sourceUrl          String?
+  sourceDate         DateTime?
+  communicationBasis CommunicationBasis @default(NONE)
+  consentStatus      ConsentStatus      @default(UNKNOWN)
+  optOut             Boolean            @default(false)
+  lastContactedAt    DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  company       Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead          Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  messages      Message[]
+  conversations Conversation[]
+  compliance    ComplianceRecord[]
+
+  @@index([companyId, leadId])
+  @@index([companyId, email])
+}
+
+model LeadSource {
+  id         String         @id @default(cuid())
+  companyId  String
+  leadId     String
+  type       LeadSourceType
+  provider   String
+  externalId String?
+  sourceUrl  String?
+  rawData    Json?
+  fetchedAt  DateTime       @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, leadId])
+  @@index([companyId, provider, externalId])
+}
+
+/// Satın alma sinyali — kesin niyet değil, "satış sinyali".
+model LeadSignal {
+  id               String     @id @default(cuid())
+  companyId        String
+  leadId           String
+  type             SignalType
+  title            String
+  description      String?
+  sourceUrl        String?
+  detectedAt       DateTime   @default(now())
+  publishedAt      DateTime?
+  confidence       Float?
+  aiInterpretation String?
+  verified         Boolean    @default(false)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, leadId])
+  @@index([companyId, detectedAt])
+}
+
+/// Puan ve nedenleri. Toplam = alt skorların toplamı; açıklama zorunlu.
+model LeadScore {
+  id            String   @id @default(cuid())
+  companyId     String
+  leadId        String
+  campaignId    String?
+  total         Int
+  productFit    Int
+  industryFit   Int
+  sizeFit       Int
+  buyingSignal  Int
+  reachability  Int
+  explanation   String
+  verifiedFacts Json?
+  assumptions   Json?
+  model         String?
+  createdAt     DateTime @default(now())
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead     Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, leadId, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// KAMPANYA VE İLETİŞİM (FAZ 3)
+// ─────────────────────────────────────────────────────────────
+
+model Campaign {
+  id                String         @id @default(cuid())
+  companyId         String
+  name              String
+  status            CampaignStatus @default(DRAFT)
+  targetDescription String
+  targetMarketId    String?
+  /// Mesaj dili: "tr" | "en" — yurt dışı kampanyalarda AI İngilizce yazar
+  language          String         @default("tr")
+  /// Doğal dil hedefin filtreye çevrilmiş hali (ülke, şehir, sektör, çalışan…)
+  filters           Json?
+  /// AI kampanya stratejisi (değer önerisi, karar verici, itirazlar…)
+  strategy          Json?
+  strategyStatus    FactStatus     @default(PENDING)
+  createdById       String?
+  approvedById      String?
+  approvedAt        DateTime?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  targetMarket  TargetMarket?  @relation(fields: [targetMarketId], references: [id], onDelete: SetNull)
+  products      Product[]
+  leads         CampaignLead[]
+  steps         CampaignStep[]
+  messages      Message[]
+  scores        LeadScore[]
+  opportunities Opportunity[]
+  tasks         Task[]
+  followUps     FollowUp[]
+
+  @@index([companyId, status])
+}
+
+model CampaignLead {
+  id               String            @id @default(cuid())
+  companyId        String
+  campaignId       String
+  leadId           String
+  status           LeadStatus        @default(NEW)
+  complianceStatus ComplianceStatus?
+  score            Int?
+  variant          String?
+  addedAt          DateTime          @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  lead     Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, leadId])
+  @@index([companyId, campaignId, status])
+}
+
+model CampaignStep {
+  id          String   @id @default(cuid())
+  companyId   String
+  campaignId  String
+  order       Int
+  dayOffset   Int
+  channel     Channel  @default(EMAIL)
+  name        String
+  variant     String?
+  instruction String?
+  stopOnReply Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  campaign  Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  followUps FollowUp[]
+
+  @@unique([campaignId, order, variant])
+  @@index([companyId])
+}
+
+model Message {
+  id                String            @id @default(cuid())
+  companyId         String
+  campaignId        String?
+  campaignStepId    String?
+  leadId            String
+  contactId         String?
+  conversationId    String?
+  channel           Channel
+  direction         MessageDirection  @default(OUTBOUND)
+  toAddress         String?
+  subject           String?
+  body              String
+  variant           String?
+  status            MessageStatus     @default(DRAFT)
+  qualityScore      Int?
+  qualityNotes      Json?
+  complianceStatus  ComplianceStatus?
+  approvedById      String?
+  approvedAt        DateTime?
+  scheduledAt       DateTime?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  openedAt          DateTime?
+  bouncedAt         DateTime?
+  provider          String?
+  providerMessageId String?
+  error             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  campaign     Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignStep CampaignStep? @relation(fields: [campaignStepId], references: [id], onDelete: SetNull)
+  lead         Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact      LeadContact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  followUps    FollowUp[]
+
+  @@index([companyId, status])
+  @@index([companyId, campaignId])
+  @@index([companyId, leadId])
+  @@index([providerMessageId])
+}
+
+model Conversation {
+  id            String         @id @default(cuid())
+  companyId     String
+  leadId        String
+  contactId     String?
+  channel       Channel
+  subject       String?
+  category      ReplyCategory?
+  lastMessageAt DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  company  Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead     Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact  LeadContact?          @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  messages ConversationMessage[]
+  outbound Message[]
+
+  @@index([companyId, leadId])
+  @@index([companyId, lastMessageAt])
+}
+
+model ConversationMessage {
+  id                 String           @id @default(cuid())
+  companyId          String
+  conversationId     String
+  direction          MessageDirection
+  fromAddress        String?
+  toAddress          String?
+  subject            String?
+  body               String
+  category           ReplyCategory?
+  categoryConfidence Float?
+  aiSummary          String?
+  receivedAt         DateTime         @default(now())
+  /// Gelen e-postanın Message-ID başlığı — aynı yanıt (IMAP / webhook tekrarı) iki kez kaydedilmez
+  externalId         String?
+
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, externalId])
+  @@index([companyId, conversationId, receivedAt])
+}
+
+/// IMAP posta kutusu okuma imleci (platform düzeyi, şirkete ait değil). Son işlenen UID burada tutulur;
+/// posta kutusundaki iletilere dokunulmaz (okundu işareti konmaz).
+model MailboxCursor {
+  id          String    @id
+  uidValidity BigInt
+  lastUid     Int
+  lastPollAt  DateTime?
+  lastError   String?
+  updatedAt   DateTime  @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// CRM (FAZ 4)
+// ─────────────────────────────────────────────────────────────
+
+model Opportunity {
+  id              String           @id @default(cuid())
+  companyId       String
+  leadId          String
+  campaignId      String?
+  title           String
+  stage           OpportunityStage @default(NEW)
+  value           Decimal?         @db.Decimal(14, 2)
+  currency        String           @default("TRY")
+  probability     Int?
+  expectedCloseAt DateTime?
+  lostReason      LostReason?
+  lostNote        String?
+  ownerId         String?
+  wonAt           DateTime?
+  lostAt          DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead      Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign  Campaign?  @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  tasks     Task[]
+  proposals Proposal[]
+
+  @@index([companyId, stage])
+  @@index([companyId, leadId])
+}
+
+/// Telefon görüşmesi kaydı. Sözlü izin (WhatsApp / e-posta) bu kayıtla belgelenir.
+model CallLog {
+  id         String      @id @default(cuid())
+  companyId  String
+  leadId     String
+  userId     String?
+  outcome    CallOutcome
+  note       String?
+  /// Aranan numara (E.164)
+  phone      String?
+  nextCallAt DateTime?
+  createdAt  DateTime    @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, leadId, createdAt])
+  @@index([companyId, createdAt])
+}
+
+model Task {
+  id            String     @id @default(cuid())
+  companyId     String
+  leadId        String?
+  opportunityId String?
+  campaignId    String?
+  title         String
+  description   String?
+  status        TaskStatus @default(OPEN)
+  priority      Priority   @default(MEDIUM)
+  dueAt         DateTime?
+  assigneeId    String?
+  createdByAI   Boolean    @default(false)
+  createdById   String?
+  completedAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  campaign    Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, status, dueAt])
+  @@index([companyId, assigneeId])
+}
+
+model FollowUp {
+  id             String         @id @default(cuid())
+  companyId      String
+  leadId         String
+  campaignId     String?
+  campaignStepId String?
+  messageId      String?
+  scheduledAt    DateTime
+  status         FollowUpStatus @default(SCHEDULED)
+  skipReason     String?
+  createdAt      DateTime       @default(now())
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead         Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  campaign     Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignStep CampaignStep? @relation(fields: [campaignStepId], references: [id], onDelete: SetNull)
+  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@index([companyId, leadId])
+}
+
+model Proposal {
+  id            String         @id @default(cuid())
+  companyId     String
+  leadId        String
+  opportunityId String?
+  number        String
+  status        ProposalStatus @default(DRAFT)
+  currency      String         @default("TRY")
+  /// [{productId, name, quantity, unitPrice, note}] — birim fiyat yalnızca insan tarafından girilir
+  items         Json
+  totalAmount   Decimal?       @db.Decimal(14, 2)
+  validUntil    DateTime?
+  deliveryTerms String?
+  terms         String?
+  missingInfo   String[]
+  pdfStorageKey String?
+  approvedById  String?
+  approvedAt    DateTime?
+  sentAt        DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead        Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@index([companyId, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// RAKİP VE İÇGÖRÜ (FAZ 5 / 4)
+// ─────────────────────────────────────────────────────────────
+
+model Competitor {
+  id         String   @id @default(cuid())
+  companyId  String
+  name       String
+  website    String?
+  strengths  String[]
+  weaknesses String[]
+  notes      String?
+  monitoring Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  signals CompetitorSignal[]
+
+  @@index([companyId])
+}
+
+model CompetitorSignal {
+  id           String     @id @default(cuid())
+  companyId    String
+  competitorId String
+  type         SignalType
+  title        String
+  description  String?
+  sourceUrl    String?
+  detectedAt   DateTime   @default(now())
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  competitor Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, detectedAt])
+}
+
+/// AI içgörüsü. dataBasis zorunlu: içgörünün dayandığı gerçek veri (sayılar, sorgu, dönem).
+/// Veri yoksa içgörü üretilmez.
+model AIInsight {
+  id        String        @id @default(cuid())
+  companyId String
+  scope     String
+  scopeId   String?
+  type      String
+  title     String
+  body      String
+  dataBasis Json
+  status    InsightStatus @default(NEW)
+  createdAt DateTime      @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, scope, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// UYUM (COMPLIANCE)
+// ─────────────────────────────────────────────────────────────
+
+model ComplianceRecord {
+  id                 String             @id @default(cuid())
+  companyId          String
+  leadId             String
+  contactId          String?
+  channel            Channel
+  address            String
+  contactType        ContactType
+  source             LeadSourceType
+  sourceDate         DateTime?
+  communicationBasis CommunicationBasis @default(NONE)
+  consentStatus      ConsentStatus      @default(UNKNOWN)
+  optOut             Boolean            @default(false)
+  suppressed         Boolean            @default(false)
+  status             ComplianceStatus   @default(REVIEW_REQUIRED)
+  reasons            String[]
+  reviewedById       String?
+  reviewedAt         DateTime?
+  lastContactedAt    DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lead    Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  contact LeadContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, channel, address])
+  @@index([companyId, status])
+  @@index([companyId, leadId])
+}
+
+/// companyId null → platform genelinde (merkezi) engel.
+model SuppressionRecord {
+  id          String            @id @default(cuid())
+  companyId   String?
+  type        SuppressionType
+  /// Normalize edilmiş değer (küçük harf e-posta, E.164 telefon, çıplak domain, lead id)
+  value       String
+  source      SuppressionSource
+  reason      String?
+  leadId      String?
+  createdById String?
+  createdAt   DateTime          @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type, value])
+  @@index([type, value])
+}
+
+// ─────────────────────────────────────────────────────────────
+// KULLANIM, MALİYET, AUDIT
+// ─────────────────────────────────────────────────────────────
+
+/// Kredi hareketi. credits < 0 → harcama, > 0 → yükleme.
+model UsageRecord {
+  id        String   @id @default(cuid())
+  companyId String
+  operation String
+  credits   Int
+  quantity  Int      @default(1)
+  refType   String?
+  refId     String?
+  userId    String?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([companyId, operation])
+}
+
+model AIUsageLog {
+  id               String   @id @default(cuid())
+  companyId        String?
+  provider         String
+  model            String
+  operation        String
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  estimatedCostUsd Decimal  @default(0) @db.Decimal(12, 6)
+  durationMs       Int?
+  success          Boolean
+  error            String?
+  createdAt        DateTime @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  companyId  String?
+  userId     String?
+  actorType  ActorType @default(USER)
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime  @default(now())
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, createdAt])
+  @@index([action])
+}
+
+model Subscription {
+  id               String             @id @default(cuid())
+  companyId        String             @unique
+  plan             Plan               @default(STARTER)
+  status           SubscriptionStatus @default(TRIALING)
+  /// stripe | iyzico | paytr | manual
+  provider         String             @default("manual")
+  externalId       String?
+  monthlyCredits   Int                @default(500)
+  leadLimit        Int                @default(500)
+  currentPeriodEnd DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// Şirketin bağladığı dış servisler. Sırlar şifreli tutulur (secretsEncrypted), config gizli olmayan ayarlardır.
+model Integration {
+  id               String            @id @default(cuid())
+  companyId        String
+  type             IntegrationType
+  provider         String
+  name             String
+  config           Json?
+  secretsEncrypted String?
+  status           IntegrationStatus @default(NOT_CONFIGURED)
+  lastCheckedAt    DateTime?
+  lastError        String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type, provider])
+}
+
+/// Arka plan işi takibi (kuyruk sürücüsünden bağımsız).
+model Job {
+  id          String    @id @default(cuid())
+  companyId   String?
+  type        String
+  status      JobStatus @default(QUEUED)
+  payload     Json
+  result      Json?
+  error       String?
+  progress    Int       @default(0)
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  createdById String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, type, createdAt])
+  @@index([status, createdAt])
+}
+
+// ── Faz 5: dış entegrasyonlar ─────────────────────────────────────────
+
+/// REST API anahtarı. Anahtarın kendisi saklanmaz; yalnızca SHA-256 özeti ve görünen öneki.
+model ApiKey {
+  id          String    @id @default(cuid())
+  companyId   String
+  name        String
+  /// Ekranda gösterilen önek, ör. "sos_live_ab12cd"
+  prefix      String
+  keyHash     String    @unique
+  /// "read" | "write"
+  scopes      String[]
+  createdById String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+}
+
+/// Giden webhook (Zapier / Make / n8n / kendi sisteminiz). İstekler HMAC ile imzalanır.
+model WebhookEndpoint {
+  id              String    @id @default(cuid())
+  companyId       String
+  url             String
+  secretEncrypted String
+  events          String[]
+  active          Boolean   @default(true)
+  lastStatus      Int?
+  lastError       String?
+  lastDeliveredAt DateTime?
+  failureCount    Int       @default(0)
+  createdById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, active])
+}

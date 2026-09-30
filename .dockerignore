@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+storage
+storage-test
+coverage
+*.bundle
+*.bat
+tests
