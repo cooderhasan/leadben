@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  checkEcommerceAction,
   createLeadAction,
   findEmailsAction,
   importLeadsCsvAction,
@@ -10,21 +11,47 @@ import {
   researchLeadAction,
   scoreLeadsAction,
   searchLeadsAction,
+  setEcommerceProspectingAction,
   updateLeadContactAction,
 } from "@/app/actions/leads";
 import { reviewComplianceAction } from "@/app/actions/email";
 import { addReplyAction } from "@/app/actions/conversations";
 import { ActionForm, FormMessage, SubmitButton } from "@/components/forms";
 import { Field, Input, Select, Textarea } from "@/components/ui";
-import { Loader2, Plus, Search, Sparkles, Trash2, Upload } from "lucide-react";
+import { Loader2, Plus, Search, ShoppingCart, Sparkles, Trash2, Upload } from "lucide-react";
 import { useFormStatus } from "react-dom";
 
-export function LeadSearchForm({ enabled, maxLimit }: { enabled: boolean; maxLimit: number }) {
+export function LeadSearchForm({ enabled, maxLimit, presets = [] }: { enabled: boolean; maxLimit: number; presets?: Array<{ label: string; prompt: string }> }) {
   return (
     <ActionForm action={searchLeadsAction} resetOnSuccess>
       {(state) => (
         <>
           <FormMessage state={state} />
+          {presets.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-text-2">Hazır aramalar</span>
+              <div className="flex flex-wrap gap-1.5">
+                {presets.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    disabled={!enabled}
+                    title={p.prompt}
+                    onClick={() => {
+                      const el = document.getElementById("prompt") as HTMLTextAreaElement | null;
+                      if (el) {
+                        el.value = p.prompt;
+                        el.focus();
+                      }
+                    }}
+                    className="rounded-full border border-border px-2.5 py-1 text-xs text-text-2 transition-colors hover:border-accent hover:bg-accent-soft hover:text-accent-text disabled:opacity-50"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <Field
             label="Ne tür müşteriler arıyorsunuz?"
             htmlFor="prompt"
@@ -186,6 +213,46 @@ export function LeadContactForm({ lead }: { lead: { id: string; website: string 
           <Field label="Web sitesi" htmlFor="c-web" error={state.fieldErrors?.website}>
             <Input id="c-web" name="website" defaultValue={lead.website ?? ""} placeholder="ornek.com.tr" />
           </Field>
+          <SubmitButton size="sm" pendingText="Kaydediliyor…" className="self-start">Kaydet</SubmitButton>
+          <FormMessage state={state} />
+        </>
+      )}
+    </ActionForm>
+  );
+}
+
+export function CheckEcommerceButton({ leadId }: { leadId: string }) {
+  return (
+    <ActionForm action={checkEcommerceAction} className="gap-2">
+      {(state) => (
+        <>
+          <input type="hidden" name="id" value={leadId} />
+          <SubmitButton variant="secondary" pendingText="Başlatılıyor…" size="sm" className="self-start">
+            <ShoppingCart className="size-4" aria-hidden /> Siteyi kontrol et (ücretsiz)
+          </SubmitButton>
+          <FormMessage state={state} />
+        </>
+      )}
+    </ActionForm>
+  );
+}
+
+/** Ayarlar: e-ticaret fırsatı modu */
+export function EcommerceModeForm({ on }: { on: boolean }) {
+  return (
+    <ActionForm action={setEcommerceProspectingAction} className="gap-3">
+      {(state) => (
+        <>
+          <label className="flex items-start gap-2 text-sm text-text">
+            <input type="checkbox" name="on" defaultChecked={on} className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]" />
+            <span>
+              E-ticaret fırsatı modu
+              <span className="block text-xs text-text-3">
+                Hedef: kendi e-ticaret sitesi olmayan veya sitesi eski olan işletmeler. Aramadan sonra siteler otomatik (ücretsiz) kontrol edilir,
+                lead listesi varsayılan olarak modern e-ticareti olanları gizler, puanlamada telefonla ulaşılabilirlik öne çıkar.
+              </span>
+            </span>
+          </label>
           <SubmitButton size="sm" pendingText="Kaydediliyor…" className="self-start">Kaydet</SubmitButton>
           <FormMessage state={state} />
         </>

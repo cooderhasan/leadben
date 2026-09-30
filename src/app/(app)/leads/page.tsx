@@ -6,7 +6,11 @@ import { can } from "@/server/tenancy/permissions";
 import { env } from "@/server/env";
 import { isLeadSourceConfigured, LEAD_SOURCE_LABELS } from "@/server/providers/lead-source";
 import { isAIConfigured } from "@/server/ai";
-import { LEAD_SORTS, LEAD_SOURCE_FILTERS, LEAD_STATUS_LABELS, leadStats, listLeadLists, listLeads } from "@/server/services/leads";
+import { ECOM_FILTERS, LEAD_SORTS, LEAD_SOURCE_FILTERS, LEAD_STATUS_LABELS, leadStats, listLeadLists, listLeads } from "@/server/services/leads";
+import { getEcommerceProspecting, getLastEcommerceCheck } from "@/server/services/ecommerce-check";
+import { ECOMMERCE_STATUS_LABELS, ECOMMERCE_STATUS_TONE, SITE_ISSUE_LABELS, type SiteIssue } from "@/server/web/ecommerce";
+import { ECOMMERCE_SEARCH_PRESETS } from "@/lib/search-presets";
+import type { EcommerceStatus } from "@prisma/client";
 import { listMembers } from "@/server/services/members";
 import { getLastEmailDiscovery, getLastListImport, getLastPreparation, getLastWebsiteDiscovery, listRecentSearches } from "@/server/services/lead-intelligence";
 import { listOpenCampaigns } from "@/server/services/campaigns";
@@ -44,6 +48,7 @@ export default async function LeadsPage({
     owner?: string;
     list?: string;
     campaign?: string;
+    ecom?: string;
     sort?: string;
     per?: string;
   }>;
@@ -51,14 +56,17 @@ export default async function LeadsPage({
   const ctx = await requireTenantPage();
   const sp = await searchParams;
   const parsed = parseLeadFilter((k) => sp[k as keyof typeof sp]);
+  const ecommerceMode = await getEcommerceProspecting(ctx);
+  // E-ticaret fırsatı modunda varsayılan görünüm: modern e-ticareti olanlar gizli ("Hepsi" ile görülür)
+  const ecom = parsed.ecom ?? (ecommerceMode ? "opportunity" : undefined);
   // "me" sekmesi oturumdaki kullanıcıya çevrilir
-  const filter = { ...parsed, owner: parsed.owner === "me" ? ctx.userId : parsed.owner };
+  const filter = { ...parsed, ecom, owner: parsed.owner === "me" ? ctx.userId : parsed.owner };
   const { status, minScore } = filter;
   const pageSize = parsed.per ?? PAGE_SIZE;
   const page = Math.max(1, Number(sp.page) || 1);
 
   const canWriteEarly = can(ctx, "lead.write");
-  const [{ rows, total }, stats, searches, emailRun, listRun, prepRun, siteRun, lists, members, openCampaigns] = await Promise.all([
+  const [{ rows, total }, stats, searches, emailRun, listRun, prepRun, siteRun, lists, members, openCampaigns, ecomRun] = await Promise.all([
     listLeads(ctx, { ...filter, take: pageSize, skip: (page - 1) * pageSize }),
     leadStats(ctx),
     listRecentSearches(ctx, 5),
@@ -69,7 +77,9 @@ export default async function LeadsPage({
     listLeadLists(ctx),
     can(ctx, "member.read") ? listMembers(ctx) : Promise.resolve([]),
     canWriteEarly && can(ctx, "campaign.write") ? listOpenCampaigns(ctx) : Promise.resolve([]),
+    getLastEcommerceCheck(ctx),
   ]);
+  const ecomRunning = ecomRun && (ecomRun.status === "QUEUED" || ecomRun.status === "RUNNING");
   const prepRunning = prepRun && (prepRun.status === "QUEUED" || prepRun.status === "RUNNING");
   const siteRunning = siteRun && (siteRun.status === "QUEUED" || siteRun.status === "RUNNING");
   const filterParams: Record<string, string | undefined> = {
@@ -81,6 +91,7 @@ export default async function LeadsPage({
     owner: filter.owner,
     list: filter.listId,
     campaign: filter.campaign,
+    ecom: filter.ecom,
   };
   // Sorumlu adları (tabloda baş harf rozeti ve seçiciler için)
   const memberNames = new Map(members.map((m) => [m.user.id, m.user.name || m.user.email]));
@@ -112,6 +123,7 @@ export default async function LeadsPage({
     if (parsed.owner) u.set("owner", parsed.owner);
     if (filter.listId) u.set("list", filter.listId);
     if (filter.campaign) u.set("campaign", filter.campaign);
+    if (filter.ecom) u.set("ecom", filter.ecom);
     if (parsed.sort) u.set("sort", parsed.sort);
     if (parsed.per) u.set("per", String(parsed.per));
     u.set("page", String(p));
@@ -159,7 +171,7 @@ export default async function LeadsPage({
                   steps={[[0, "Arama başlatılıyor…"], [10, "Kaynak taranıyor (birkaç dakika sürebilir)…"], [80, "Tekrarlar ayıklanıyor ve kaydediliyor…"]]}
                 />
               ) : (
-                <LeadSearchForm enabled={sourceReady} maxLimit={env().LEAD_SEARCH_MAX} />
+                <LeadSearchForm enabled={sourceReady} maxLimit={env().LEAD_SEARCH_MAX} presets={ecommerceMode ? ECOMMERCE_SEARCH_PRESETS : []} />
               )}
               {searches.filter((s) => s !== running).length > 0 && (
                 <ul className="divide-y divide-border rounded-lg border border-border text-xs">
@@ -267,6 +279,13 @@ export default async function LeadsPage({
             <option value="out">Kampanyada olmayanlar</option>
             <option value="in">Kampanyada olanlar</option>
           </Select>
+          {(ecommerceMode || parsed.ecom) && (
+            <Select name="ecom" defaultValue={filter.ecom ?? "all"} className="w-64" aria-label="E-ticaret durumu">
+              {Object.entries(ECOM_FILTERS).map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
+              ))}
+            </Select>
+          )}
           <Select name="sort" defaultValue={parsed.sort ?? "score"} className="w-44" aria-label="Sıralama">
             {Object.entries(LEAD_SORTS).map(([k, v]) => (
               <option key={k} value={k}>{v.label}</option>
@@ -299,6 +318,19 @@ export default async function LeadsPage({
               />
             ) : (
               <PreparationSummary run={prepRun} />
+            )}
+          </div>
+        )}
+        {ecomRun && (
+          <div className="border-b border-border px-5 py-3">
+            {ecomRunning ? (
+              <JobPoller
+                jobId={ecomRun.id}
+                label={`${ecomRun.total} firmanın sitesi kontrol ediliyor (e-ticaret / eski site)…`}
+                steps={[[0, "Siteler sırayla açılıyor (firma başına birkaç saniye)…"]]}
+              />
+            ) : (
+              <EcommerceCheckSummary run={ecomRun} />
             )}
           </div>
         )}
@@ -384,6 +416,7 @@ export default async function LeadsPage({
                         <ContactIcon on={Boolean(l.website)} label={l.domain ?? "Web sitesi yok"}><Globe /></ContactIcon>
                         {l.domain && <span className="truncate text-xs">{l.domain}</span>}
                       </div>
+                      {l.ecommerceStatus && <EcommerceBadge lead={l} />}
                       {canWrite && !l.genericEmail && (
                         <details className="mt-1.5">
                           <summary className="cursor-pointer text-xs font-medium text-accent-text">+ e-posta ekle</summary>
@@ -451,6 +484,66 @@ export default async function LeadsPage({
         )}
       </Card>
     </>
+  );
+}
+
+/** E-ticaret durumu rozeti; ayrıntı (altyapı, pazaryeri, eksikler) üzerine gelince */
+function EcommerceBadge({ lead }: { lead: { ecommerceStatus: EcommerceStatus | null; ecommercePlatform: string | null; marketplaces: string[]; siteIssues: string[] } }) {
+  if (!lead.ecommerceStatus) return null;
+  const detail = [
+    lead.ecommercePlatform && `Altyapı: ${lead.ecommercePlatform}`,
+    lead.marketplaces.length > 0 && `Pazaryeri: ${lead.marketplaces.join(", ")}`,
+    lead.siteIssues.length > 0 && `Eksikler: ${lead.siteIssues.map((i) => SITE_ISSUE_LABELS[i as SiteIssue] ?? i).join(", ")}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <Badge tone={ECOMMERCE_STATUS_TONE[lead.ecommerceStatus]} title={detail || undefined}>
+        {ECOMMERCE_STATUS_LABELS[lead.ecommerceStatus]}
+      </Badge>
+      {lead.marketplaces.length > 0 && lead.ecommerceStatus !== "MARKETPLACE_ONLY" && (
+        <span className="text-[11px] text-text-3">{lead.marketplaces.join(", ")}</span>
+      )}
+    </div>
+  );
+}
+
+function EcommerceCheckSummary({ run }: { run: NonNullable<Awaited<ReturnType<typeof getLastEcommerceCheck>>> }) {
+  if (run.status !== "SUCCEEDED") {
+    return <Alert tone="danger">Site kontrolü tamamlanamadı{run.error ? `: ${run.error}` : "."} Tekrar deneyebilirsiniz.</Alert>;
+  }
+  const order: EcommerceStatus[] = ["MARKETPLACE_ONLY", "NO_WEBSITE", "SOCIAL_ONLY", "SITE_DOWN", "INFO_SITE", "OUTDATED_ECOMMERCE", "HAS_ECOMMERCE"];
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-medium text-text">Son site kontrolü: {run.total} firma</p>
+      <div className="flex flex-wrap gap-2">
+        {order
+          .filter((s) => run.counts[s])
+          .map((s) => (
+            <Badge key={s} tone={ECOMMERCE_STATUS_TONE[s]}>
+              {run.counts[s]} · {ECOMMERCE_STATUS_LABELS[s]}
+            </Badge>
+          ))}
+        {run.blocked > 0 && <Badge title="Site robots.txt ile taramayı yasaklıyor; buna uyuyoruz">{run.blocked} site taramaya izin vermiyor</Badge>}
+      </div>
+      {run.items.length > 0 && (
+        <details className="rounded-lg border border-border">
+          <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-accent-text">Firma firma gerekçeleri göster ({run.items.length})</summary>
+          <ul className="divide-y divide-border border-t border-border">
+            {run.items.map((it) => (
+              <li key={it.leadId} className="flex flex-col gap-1 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+                <span className="shrink-0 sm:w-48">
+                  {it.status ? <Badge tone={ECOMMERCE_STATUS_TONE[it.status]}>{ECOMMERCE_STATUS_LABELS[it.status]}</Badge> : <Badge>Taramaya izin yok</Badge>}
+                </span>
+                <Link href={`/leads/${it.leadId}`} className="min-w-0 truncate text-sm font-medium text-text hover:text-accent-text sm:w-64">{it.name}</Link>
+                <span className="min-w-0 flex-1 text-xs text-text-2">{it.evidence}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 

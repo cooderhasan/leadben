@@ -17,6 +17,7 @@ import type { RawLead } from "@/server/providers/lead-source/types";
 import { checkMailDomain } from "@/server/providers/email/mx";
 import { checkEmailQuality } from "@/lib/email-quality";
 import { emitEvent } from "./integrations";
+import { classifyWithoutFetch, OPPORTUNITY_STATUSES } from "@/server/web/ecommerce";
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   NEW: "Yeni",
@@ -53,6 +54,8 @@ export interface LeadFilter {
   listId?: string;
   /** Açık kampanyada olan / olmayan */
   campaign?: "in" | "out";
+  /** E-ticaret durumu grubu (e-ticaret fırsatı modu) */
+  ecom?: EcomFilter;
   sort?: LeadSort;
   take?: number;
   skip?: number;
@@ -77,8 +80,45 @@ export const LEAD_SOURCE_FILTERS = {
 } as const;
 export type LeadSourceFilter = keyof typeof LEAD_SOURCE_FILTERS;
 
+export const ECOM_FILTERS = {
+  opportunity: "Fırsatlar (modern e-ticareti olmayanlar)",
+  none: "Sitesi yok / açılmıyor / sosyal medya",
+  info: "Tanıtım sitesi var, satış yok",
+  marketplace: "Yalnızca pazaryerinde satanlar",
+  revision: "Eski e-ticaret (revizyon)",
+  has: "Modern e-ticareti olanlar",
+  unchecked: "Henüz kontrol edilmedi",
+  all: "E-ticaret: hepsi",
+} as const;
+export type EcomFilter = keyof typeof ECOM_FILTERS;
+
+function ecomWhere(f: EcomFilter): Prisma.LeadWhereInput | null {
+  switch (f) {
+    // Kontrol edilmemiş olanlar da fırsat sayılır (kontrol edilene kadar gizlenmez)
+    case "opportunity":
+      return { OR: [{ ecommerceStatus: null }, { ecommerceStatus: { in: OPPORTUNITY_STATUSES } }] };
+    case "none":
+      return { ecommerceStatus: { in: ["NO_WEBSITE", "SITE_DOWN", "SOCIAL_ONLY"] } };
+    case "info":
+      return { ecommerceStatus: "INFO_SITE" };
+    case "marketplace":
+      return { ecommerceStatus: "MARKETPLACE_ONLY" };
+    case "revision":
+      return { ecommerceStatus: "OUTDATED_ECOMMERCE" };
+    case "has":
+      return { ecommerceStatus: "HAS_ECOMMERCE" };
+    case "unchecked":
+      return { ecommerceStatus: null };
+    default:
+      return null;
+  }
+}
+
 export function buildWhere(filter: LeadFilter): Prisma.LeadWhereInput {
   const where: Prisma.LeadWhereInput = {};
+  // Arama (q) da OR kullandığı için e-ticaret koşulu AND içinde tutulur
+  const ecom = filter.ecom ? ecomWhere(filter.ecom) : null;
+  if (ecom) where.AND = [ecom];
   if (filter.source) where.sources = { some: { provider: { in: [...LEAD_SOURCE_FILTERS[filter.source].providers] } } };
   if (filter.email === "yes") where.genericEmail = { not: null };
   if (filter.email === "no") where.genericEmail = null;
@@ -312,7 +352,12 @@ export async function updateLeadContactInfo(ctx: TenantContext, input: { id: str
 
   // Yalnızca gönderilen alanlar değişir (hızlı "e-posta ekle" telefonu / siteyi silmesin)
   const data: Prisma.LeadUpdateInput = {};
-  if (input.website !== undefined) Object.assign(data, { website: website ? (/^https?:\/\//i.test(website) ? website : `https://${website}`) : null, domain });
+  if (input.website !== undefined) {
+    const nextSite = website ? (/^https?:\/\//i.test(website) ? website : `https://${website}`) : null;
+    Object.assign(data, { website: nextSite, domain });
+    // Site değiştiyse eski e-ticaret sonucu geçersiz: siteye bakmadan bilinen durum yazılır, gerisi yeniden kontrol edilir
+    if (nextSite !== lead.website) Object.assign(data, ecommerceFromAddress(nextSite) ?? { ecommerceStatus: null, ecommercePlatform: null, marketplaces: [], siteIssues: [], ecommerceCheckedAt: null });
+  }
   if (input.phone !== undefined) Object.assign(data, { phone, normalizedPhone });
   if (input.genericEmail !== undefined) data.genericEmail = email;
   await db.lead.update({ where: { id: lead.id }, data });
@@ -369,6 +414,12 @@ async function findDuplicate(db: TenantDb, data: ReturnType<typeof rawToLeadData
   return db.lead.findFirst({ where: { OR: or }, orderBy: { createdAt: "asc" } });
 }
 
+/** Siteyi açmadan bilinen e-ticaret durumu (site yok / sosyal medya / pazaryeri mağazası) */
+function ecommerceFromAddress(website: string | null) {
+  const v = classifyWithoutFetch(website);
+  return v ? { ecommerceStatus: v.status, marketplaces: v.marketplaces, ecommerceCheckedAt: new Date() } : null;
+}
+
 /** Boş olan alanları doldurur; dolu alanların üzerine yazmaz. */
 function fillMissing(existing: Record<string, unknown>, incoming: Record<string, unknown>): Record<string, unknown> {
   const patch: Record<string, unknown> = {};
@@ -417,7 +468,7 @@ export async function saveDiscoveredLeads(
       result.merged++;
     } else {
       // Sorumlu yalnızca yeni kayıtta atanır; mevcut firmanın sorumlusu değişmez
-      const created = await db.lead.create({ data: { ...data, companyId, status: "NEW", ownerId: opts.ownerId ?? null } });
+      const created = await db.lead.create({ data: { ...data, ...ecommerceFromAddress(data.website), companyId, status: "NEW", ownerId: opts.ownerId ?? null } });
       leadId = created.id;
       result.created++;
     }

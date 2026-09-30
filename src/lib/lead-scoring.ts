@@ -41,8 +41,16 @@ export interface ReachabilityInput {
 }
 
 /** Ulaşılabilirlik tamamen veriden hesaplanır — AI'a sorulmaz. */
-export function computeReachability(i: ReachabilityInput): number {
+export function computeReachability(i: ReachabilityInput, mode: "default" | "phone_first" = "default"): number {
   let s = 0;
+  if (mode === "phone_first") {
+    // Sitesi olmayan esnafa telefon / WhatsApp ile ulaşılır; web sitesi burada ulaşılabilirlik sayılmaz
+    if (i.phone) s += 8;
+    if (i.genericEmail) s += 3;
+    if (i.instagram || i.linkedin) s += 2;
+    if ((i.contactCount ?? 0) > 0) s += 2;
+    return Math.min(s, SCORE_MAX.reachability);
+  }
   if (i.genericEmail) s += 5;
   if (i.phone) s += 4;
   if (i.website) s += 3;
@@ -57,7 +65,35 @@ export interface ScoreEvidence {
   /** Lead web sitesi araştırıldı mı (enrichment var mı) */
   researched: boolean;
   reachability: number;
+  /**
+   * E-ticaret fırsatı modu: sitede ölçülerek bulunan durum (AI tahmini değil).
+   * Verilirse satın alma sinyali buna göre belirlenir; verilmezse (mod kapalı) etkisi yok.
+   */
+  ecommerceStatus?: EcommerceStatusKey | null;
 }
+
+export type EcommerceStatusKey =
+  | "NO_WEBSITE"
+  | "SOCIAL_ONLY"
+  | "SITE_DOWN"
+  | "INFO_SITE"
+  | "MARKETPLACE_ONLY"
+  | "OUTDATED_ECOMMERCE"
+  | "HAS_ECOMMERCE";
+
+/**
+ * Doğrulanmış e-ticaret durumuna göre satın alma sinyali tabanı (/20). En sıcak: pazaryerinde satıp kendi mağazası
+ * olmayan (entegrasyon ihtiyacı belli). Modern e-ticareti olan firma için üst sınır.
+ */
+export const ECOMMERCE_SIGNAL_FLOOR: Record<Exclude<EcommerceStatusKey, "HAS_ECOMMERCE">, number> = {
+  MARKETPLACE_ONLY: 20,
+  SOCIAL_ONLY: 17,
+  NO_WEBSITE: 16,
+  OUTDATED_ECOMMERCE: 15,
+  SITE_DOWN: 15,
+  INFO_SITE: 14,
+};
+export const HAS_ECOMMERCE_SIGNAL_CAP = 2;
 
 export interface AiSubScores {
   productFit: number;
@@ -89,7 +125,15 @@ export function finalizeScore(ai: AiSubScores, ev: ScoreEvidence): FinalScore {
   const productFit = cap("productFit", ai.productFit, ev.researched ? null : UNVERIFIED_CAPS.productFit);
   const industryFit = cap("industryFit", ai.industryFit, null);
   const sizeFit = cap("sizeFit", ai.sizeFit, ev.hasSizeData ? null : UNVERIFIED_CAPS.sizeFit);
-  const buyingSignal = cap("buyingSignal", ai.buyingSignal, ev.verifiedSignalCount > 0 ? null : UNVERIFIED_CAPS.buyingSignal);
+  let buyingSignal: number;
+  if (ev.ecommerceStatus === "HAS_ECOMMERCE") {
+    buyingSignal = cap("buyingSignal", ai.buyingSignal, HAS_ECOMMERCE_SIGNAL_CAP);
+  } else if (ev.ecommerceStatus) {
+    // Sitede ölçülmüş durum doğrulanmış sinyaldir: taban uygulanır, AI daha yüksek verebilir
+    buyingSignal = Math.max(clamp(ai.buyingSignal, SCORE_MAX.buyingSignal), ECOMMERCE_SIGNAL_FLOOR[ev.ecommerceStatus]);
+  } else {
+    buyingSignal = cap("buyingSignal", ai.buyingSignal, ev.verifiedSignalCount > 0 ? null : UNVERIFIED_CAPS.buyingSignal);
+  }
   const reachability = clamp(ev.reachability, SCORE_MAX.reachability);
 
   return {

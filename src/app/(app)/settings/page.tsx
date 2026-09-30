@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { requireTenantPage } from "@/server/tenancy/context";
 import { getCompanyOverview } from "@/server/services/company";
-import { roleLabel } from "@/server/tenancy/permissions";
+import { can, roleLabel } from "@/server/tenancy/permissions";
+import { getEcommerceProspecting } from "@/server/services/ecommerce-check";
+import { EcommerceModeForm } from "../leads/lead-forms";
 import { Badge, Card, CardBody, CardHeader, LinkButton } from "@/components/ui";
 import { formatDate } from "@/lib/cn";
 
@@ -12,7 +14,7 @@ const SUB: Record<string, string> = { TRIALING: "Deneme", ACTIVE: "Aktif", PAST_
 
 export default async function SettingsPage() {
   const ctx = await requireTenantPage();
-  const { company } = await getCompanyOverview(ctx);
+  const [{ company }, ecommerceMode] = await Promise.all([getCompanyOverview(ctx), getEcommerceProspecting(ctx)]);
   const sub = company.subscription;
 
   return (
@@ -40,6 +42,16 @@ export default async function SettingsPage() {
           <p className="text-xs text-text-3">
             Ödeme entegrasyonu (Stripe / iyzico / PayTR) sonraki fazda eklenecek. Mimari hazır: Subscription.provider alanı.
           </p>
+        </CardBody>
+      </Card>
+      <Card className="lg:col-span-2">
+        <CardHeader title="Satış hedefi" description="Lead bulma, liste ve puanlama bu hedefe göre çalışır." />
+        <CardBody>
+          {can(ctx, "company.update") ? (
+            <EcommerceModeForm on={ecommerceMode} />
+          ) : (
+            <p className="text-sm text-text-2">E-ticaret fırsatı modu: {ecommerceMode ? "açık" : "kapalı"} (değiştirmek için yönetici yetkisi gerekir)</p>
+          )}
         </CardBody>
       </Card>
     </div>

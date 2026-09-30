@@ -1,5 +1,5 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
+import type { EcommerceStatus, Prisma } from "@prisma/client";
 import { tenantDb } from "@/server/tenancy/tenant-db";
 import { assertCan } from "@/server/tenancy/permissions";
 import type { TenantContext } from "@/server/tenancy/types";
@@ -29,6 +29,8 @@ import { audit } from "@/server/audit/audit";
 import { buildVerifiedCompanyContext } from "./facts";
 import { evidenceFound, normalizeForMatch, valueFound } from "./evidence";
 import { createLeadList, ensureJobList, saveDiscoveredLeads } from "./leads";
+import { getEcommerceProspecting, queueEcommerceCheckAfterImport } from "./ecommerce-check";
+import { ECOMMERCE_STATUS_LABELS, SITE_ISSUE_LABELS, type SiteIssue } from "@/server/web/ecommerce";
 import { AppError } from "@/lib/errors";
 import { computeReachability, finalizeScore } from "@/lib/lead-scoring";
 import { extractDomain, isCompanyEmail, isGenericEmail, nameSimilarity, normalizeEmail, normalizePhone, pickCompanyEmail } from "@/lib/lead-normalize";
@@ -40,12 +42,13 @@ const REFRESH_DAYS = 90;
 // ── Satıcı şirket bağlamı (yalnızca doğrulanmış bilgi) ─────────────────
 
 async function sellerContext(companyId: string) {
-  const [verified, markets] = await Promise.all([
+  const [verified, markets, ecommerceProspecting] = await Promise.all([
     buildVerifiedCompanyContext({ companyId }),
     tenantDb({ companyId }).targetMarket.findMany({
       select: { name: true, isExcluded: true, industries: true, cities: true, countries: true, minEmployees: true, maxEmployees: true, notes: true },
       orderBy: { priority: "desc" },
     }),
+    getEcommerceProspecting({ companyId }),
   ]);
   const productNames = verified.products.map((p) => p.name);
   const text = JSON.stringify(
@@ -67,7 +70,7 @@ async function sellerContext(companyId: string) {
     null,
     1,
   );
-  return { text, productNames, hasProducts: productNames.length > 0 };
+  return { text, productNames, hasProducts: productNames.length > 0, ecommerceProspecting };
 }
 
 // ── 1) Doğal dil arama ───────────────────────────────────────────────
@@ -212,6 +215,7 @@ export async function importLeadsCsv(ctx: TenantContext, text: string) {
   }
   const list = await createLeadList(ctx, `CSV · ${new Date().toLocaleDateString("tr-TR", { day: "numeric", month: "short", timeZone: "Europe/Istanbul" })}`);
   const result = await saveDiscoveredLeads(ctx.companyId, parsed.leads, { provider: "csv", listId: list.id, ownerId: ctx.userId });
+  await queueEcommerceCheckAfterImport(ctx.companyId, result.leadIds, ctx.userId);
   await audit({
     companyId: ctx.companyId,
     userId: ctx.userId,
@@ -451,6 +455,10 @@ function leadToPrompt(lead: {
   employeeCountMax: number | null;
   aiSummary: string | null;
   enrichment: Prisma.JsonValue;
+  ecommerceStatus: EcommerceStatus | null;
+  ecommercePlatform: string | null;
+  marketplaces: string[];
+  siteIssues: string[];
   signals: Array<{ type: string; title: string; description: string | null; publishedAt: Date | null }>;
 }) {
   const e = (lead.enrichment ?? null) as LeadEnrichment | null;
@@ -466,6 +474,15 @@ function leadToPrompt(lead: {
       products: e?.products ?? [],
       verifiedFacts: e?.verified.map((v) => v.statement) ?? [],
       assumptions: e?.assumptions.map((a) => a.statement) ?? [],
+      // Sitede AI'sız ölçülen çevrim içi satış durumu (doğrulanmış)
+      onlineSales: lead.ecommerceStatus
+        ? {
+            status: ECOMMERCE_STATUS_LABELS[lead.ecommerceStatus],
+            platform: lead.ecommercePlatform,
+            marketplaces: lead.marketplaces,
+            siteIssues: lead.siteIssues.map((i) => SITE_ISSUE_LABELS[i as SiteIssue] ?? i),
+          }
+        : null,
       verifiedSignals: lead.signals.map((s) => ({
         type: s.type,
         title: s.title,
@@ -504,14 +521,18 @@ export async function scoreLead(companyId: string, leadId: string, seller?: Awai
     verifiedSignalCount: lead.signals.length,
     hasSizeData: Boolean(lead.employeeCountMin || lead.employeeCountMax),
     researched: Boolean(lead.enrichment),
-    reachability: computeReachability({
-      website: lead.website,
-      phone: lead.phone,
-      genericEmail: lead.genericEmail,
-      contactCount: lead._count.contacts,
-      linkedin: lead.linkedin,
-      instagram: lead.instagram,
-    }),
+    reachability: computeReachability(
+      {
+        website: lead.website,
+        phone: lead.phone,
+        genericEmail: lead.genericEmail,
+        contactCount: lead._count.contacts,
+        linkedin: lead.linkedin,
+        instagram: lead.instagram ?? lead.facebook,
+      },
+      ctxSeller.ecommerceProspecting ? "phone_first" : "default",
+    ),
+    ecommerceStatus: ctxSeller.ecommerceProspecting ? lead.ecommerceStatus : null,
   });
 
   // Ürün uydurma koruması: yalnızca şirketin onaylı ürün adları
@@ -899,6 +920,7 @@ export async function importFromList(
       const leads = matching.slice(0, STRUCTURED_MAX);
       const listId = list ? await ensureJobList(companyId, { jobId: list.jobId, name: listName(payload.url, filter), kind: "IMPORT", createdById: list.createdById }) : undefined;
       const saved = await saveDiscoveredLeads(companyId, leads, { provider: "directory", listId, ownerId: list?.createdById ?? null });
+      await queueEcommerceCheckAfterImport(companyId, saved.leadIds, list?.createdById ?? null);
       return {
         sourceUrl,
         structured: true,
@@ -939,7 +961,8 @@ export async function importFromList(
   const { dropped } = verified;
   const leads = applyListFilter(verified.leads, filter);
   const listId2 = list && leads.length ? await ensureJobList(companyId, { jobId: list.jobId, name: listName(payload.url, filter), kind: "IMPORT", createdById: list.createdById }) : undefined;
-  const saved = leads.length ? await saveDiscoveredLeads(companyId, leads, { provider: "directory", listId: listId2, ownerId: list?.createdById ?? null }) : { created: 0, merged: 0 };
+  const saved = leads.length ? await saveDiscoveredLeads(companyId, leads, { provider: "directory", listId: listId2, ownerId: list?.createdById ?? null }) : { created: 0, merged: 0, leadIds: [] };
+  await queueEcommerceCheckAfterImport(companyId, saved.leadIds, list?.createdById ?? null);
   return {
     sourceUrl,
     structured: false,

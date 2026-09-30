@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { rawDb } from "@/server/db";
 import { getLeadSourceProvider } from "@/server/providers/lead-source";
 import { ensureJobList, saveDiscoveredLeads } from "@/server/services/leads";
+import { queueEcommerceCheckAfterImport } from "@/server/services/ecommerce-check";
 import { refundCredits, CREDIT_COSTS } from "@/server/usage/credits";
 import { audit } from "@/server/audit/audit";
 import { PermanentJobError, type JobHandler, type JobPayloads } from "../types";
@@ -45,6 +46,9 @@ export const searchLeadsJob: JobHandler<"lead.search"> = async (payload, h) => {
       // Yalnızca yeni eklenen lead'ler ücretlendirilir; mevcut kayıtla birleşenler ücretsiz
       const unusedCredits = (payload.reserved - saved.created) * CREDIT_COSTS["lead.discovery"];
       if (payload.usageId && unusedCredits > 0) await refundCredits(payload.usageId, "lead.search.unused", unusedCredits);
+
+      // E-ticaret fırsatı modunda bulunan firmaların sitesi otomatik (ücretsiz) kontrol edilir
+      await queueEcommerceCheckAfterImport(h.companyId, saved.leadIds, h.createdById);
 
       await audit({
         companyId: h.companyId,

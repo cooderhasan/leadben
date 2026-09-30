@@ -184,6 +184,17 @@ enum SuppressionSource {
   COMPLAINT
 }
 
+/// Lead'in çevrim içi satış durumu (e-ticaret fırsatı modu)
+enum EcommerceStatus {
+  NO_WEBSITE
+  SOCIAL_ONLY
+  SITE_DOWN
+  INFO_SITE
+  MARKETPLACE_ONLY
+  OUTDATED_ECOMMERCE
+  HAS_ECOMMERCE
+}
+
 enum SignalType {
   NEW_FACILITY
   NEW_PRODUCTION_LINE
@@ -409,6 +420,9 @@ model Company {
   creditBalance         Int       @default(0)
   onboardingStep        Int       @default(0)
   onboardingCompletedAt DateTime?
+  /// E-ticaret fırsatı modu: hedef, kendi e-ticaret sitesi olmayan / eski sitesi olan işletmeler.
+  /// Açıkken aramadan sonra site kontrolü otomatik yapılır, liste ve puanlama buna göre çalışır.
+  ecommerceProspecting  Boolean   @default(false)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -777,6 +791,15 @@ model Lead {
   lastCallAt       DateTime?
   lastCallOutcome  CallOutcome?
   callAttempts     Int          @default(0)
+  /// Web sitesi / e-ticaret durumu — AI'sız, sitenin kodundaki işaretlerden (bkz. server/web/ecommerce.ts)
+  ecommerceStatus    EcommerceStatus?
+  /// Tespit edilen e-ticaret altyapısı (Ticimax, İdeaSoft, WooCommerce…)
+  ecommercePlatform  String?
+  /// Sitede bağlantısı bulunan pazaryeri mağazaları (Trendyol, Hepsiburada…)
+  marketplaces       String[]     @default([])
+  /// Eski / kötü site işaretleri (HTTPS yok, mobil uyumsuz, eski telif yılı…)
+  siteIssues         String[]     @default([])
+  ecommerceCheckedAt DateTime?
   /// Firmadan sorumlu ekip üyesi (aramayı / içe aktarmayı yapan kişi; sonradan değiştirilebilir)
   ownerId          String?
   createdAt        DateTime     @default(now())
@@ -806,6 +829,7 @@ model Lead {
   @@index([companyId, normalizedPhone])
   @@index([companyId, normalizedName])
   @@index([companyId, city])
+  @@index([companyId, ecommerceStatus])
   @@index([companyId, nextRefreshAt])
 }
 

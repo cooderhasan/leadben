@@ -141,6 +141,7 @@ describe("web analizi → fact taslakları", () => {
         emails: ["info@a.test"],
         phones: [],
         hasContactForm: false,
+        shop: { platform: null, cartUrl: null, addToCart: false, marketplaces: [], issues: [], copyrightYear: null },
       },
     ],
   };

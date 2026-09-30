@@ -4,6 +4,7 @@ import { Agent, fetch as undiciFetch } from "undici";
 import * as cheerio from "cheerio";
 import { isPrivateAddress, normalizeUrl, registrableHost } from "./ssrf";
 import { getPageRenderer } from "@/server/providers/render";
+import { detectShopSignals, type ShopSignals } from "./ecommerce";
 
 export const USER_AGENT = "AISalesOS-SiteAnalyzer/1.0 (+company-profile-analysis)";
 const MAX_BYTES = 2_000_000;
@@ -28,6 +29,8 @@ export interface PageContent {
   phones: string[];
   /** Sayfada mesaj alanı olan bir iletişim formu var mı (e-posta bulunamayan firmalar için tek kanal) */
   hasContactForm: boolean;
+  /** E-ticaret / eski site işaretleri (script etiketleri silinmeden önce çıkarılır) */
+  shop: ShopSignals;
 }
 
 export class FetchBlockedError extends Error {
@@ -229,6 +232,7 @@ export function extractPage(html: string, pageUrl: URL): PageContent {
 
   // Form, metin çıkarılırken siliniyor → önce tespit edilir
   const hasContactForm = detectContactForm($);
+  const shop = detectShopSignals($, html, pageUrl);
 
   $("script, style, noscript, svg, iframe, template, form").remove();
   const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, MAX_TEXT_PER_PAGE);
@@ -248,6 +252,7 @@ export function extractPage(html: string, pageUrl: URL): PageContent {
     emails: [...emails].slice(0, 20),
     phones: [...phones].slice(0, 20),
     hasContactForm,
+    shop,
   };
 }
 

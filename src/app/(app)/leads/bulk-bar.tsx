@@ -44,6 +44,7 @@ const OPS: Array<[string, string]> = [
   ["prepare", "Hazırla (e-posta bul → analiz et → puanla)"],
   ["find_website", "Firma adından web sitesini bul (1 kredi)"],
   ["find_email", "Web sitesinde e-posta bul (ücretsiz)"],
+  ["check_ecommerce", "E-ticaret / site durumunu kontrol et (ücretsiz)"],
   ["score", "Yalnızca puanla"],
   ["campaign", "Kampanyaya ekle"],
   ["assign", "Sorumlu ata"],

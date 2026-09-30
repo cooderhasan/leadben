@@ -4,6 +4,10 @@ import { LEAD_STATUSES } from "./validation";
 export type LeadSourceKey = "maps" | "web" | "directory" | "csv" | "manual";
 const SOURCES: LeadSourceKey[] = ["maps", "web", "directory", "csv", "manual"];
 
+/** E-ticaret durumu grupları (sunucudaki ECOM_FILTERS ile aynı anahtarlar) */
+export const ECOM_FILTER_KEYS = ["opportunity", "none", "info", "marketplace", "revision", "has", "unchecked", "all"] as const;
+export type EcomFilterKey = (typeof ECOM_FILTER_KEYS)[number];
+
 export const LEAD_PAGE_SIZES = [50, 100, 200] as const;
 export const LEAD_SORT_KEYS = ["score", "new", "name"] as const;
 export type LeadSortKey = (typeof LEAD_SORT_KEYS)[number];
@@ -18,6 +22,7 @@ export interface ParsedLeadFilter {
   owner?: string;
   listId?: string;
   campaign?: "in" | "out";
+  ecom?: EcomFilterKey;
   sort?: LeadSortKey;
   per?: number;
 }
@@ -37,9 +42,11 @@ export function parseLeadFilter(get: (k: string) => string | null | undefined): 
   const listId = get("list")?.trim() || undefined;
   const campaignRaw = get("campaign");
   const campaign = campaignRaw === "in" || campaignRaw === "out" ? campaignRaw : undefined;
+  const ecomRaw = get("ecom") ?? "";
+  const ecom = (ECOM_FILTER_KEYS as readonly string[]).includes(ecomRaw) ? (ecomRaw as EcomFilterKey) : undefined;
   const sortRaw = get("sort") ?? "";
   const sort = (LEAD_SORT_KEYS as readonly string[]).includes(sortRaw) ? (sortRaw as LeadSortKey) : undefined;
   const perRaw = Number(get("per"));
   const per = (LEAD_PAGE_SIZES as readonly number[]).includes(perRaw) ? perRaw : undefined;
-  return { q, status, minScore, source, email, owner, listId, campaign, sort, per };
+  return { q, status, minScore, source, email, owner, listId, campaign, ecom, sort, per };
 }

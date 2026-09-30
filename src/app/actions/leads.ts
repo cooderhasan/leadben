@@ -35,6 +35,7 @@ import {
 import { leadContactSchema, leadSearchFormSchema, leadStatusSchema, manualLeadSchema } from "@/lib/validation";
 import { AppError } from "@/lib/errors";
 import { LEAD_SOURCE_LABELS } from "@/server/providers/lead-source";
+import { setEcommerceProspecting, startEcommerceCheck } from "@/server/services/ecommerce-check";
 import type { ActionState } from "@/lib/action-state";
 
 export async function searchLeadsAction(_: ActionState, fd: FormData): Promise<ActionState> {
@@ -125,6 +126,29 @@ export async function findEmailsAction(_: ActionState, fd: FormData): Promise<Ac
     const res = await startEmailDiscovery(ctx, ids);
     revalidatePath("/leads");
     return { ok: true, message: `${res.count} firmanın sitesinde e-posta aranıyor; ilerleme ve sonuç listenin üstünde görünecek.` };
+  });
+}
+
+/** Tek firmanın sitesinde e-ticaret kontrolü (lead sayfası) */
+export async function checkEcommerceAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return safeAction(async () => {
+    const ctx = await requireTenant();
+    const id = String(fd.get("id") ?? "");
+    await startEcommerceCheck(ctx, [id]);
+    revalidatePath(`/leads/${id}`);
+    return { ok: true, message: "Site kontrol ediliyor; birkaç saniye sonra sayfayı yenileyin." };
+  });
+}
+
+/** E-ticaret fırsatı modu aç / kapat */
+export async function setEcommerceProspectingAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return safeAction(async () => {
+    const ctx = await requireTenant();
+    const on = fd.get("on") === "on";
+    await setEcommerceProspecting(ctx, on);
+    revalidatePath("/leads");
+    revalidatePath("/settings");
+    return { ok: true, message: on ? "E-ticaret fırsatı modu açıldı." : "E-ticaret fırsatı modu kapatıldı." };
   });
 }
 
@@ -223,6 +247,11 @@ export async function bulkLeadsAction(_: ActionState, fd: FormData): Promise<Act
       case "find_email": {
         const r = await startEmailDiscovery(ctx, ids);
         message = `${r.count} firmanın sitesinde e-posta aranıyor.`;
+        break;
+      }
+      case "check_ecommerce": {
+        const r = await startEcommerceCheck(ctx, ids);
+        message = `${r.count} firmanın sitesi kontrol ediliyor (ücretsiz)${r.capped ? " — tek seferde en fazla 100" : ""}. Sonuç listenin üstünde.`;
         break;
       }
       case "score": {

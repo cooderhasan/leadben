@@ -5,6 +5,7 @@ import { searchLeadsJob, onLeadSearchFailure } from "./lead-search";
 import { enrichLeadJob, onLeadEnrichFailure } from "./lead-enrich";
 import { scoreLeadsJob, onLeadScoreFailure } from "./lead-score";
 import { findEmailsJob } from "./lead-find-email";
+import { checkEcommerceJob } from "./lead-check-ecommerce";
 import { findWebsitesJob, onFindWebsiteFailure } from "./lead-find-website";
 import { prepareLeadsJob, onPrepareFailure } from "./lead-prepare";
 import { listImportJob, onListImportFailure } from "./lead-list-import";
@@ -40,6 +41,7 @@ export const handlers: Registry = {
   "lead.enrich": { run: enrichLeadJob, onFailure: onLeadEnrichFailure },
   "lead.score": { run: scoreLeadsJob, onFailure: onLeadScoreFailure },
   "lead.find_email": { run: findEmailsJob },
+  "lead.check_ecommerce": { run: checkEcommerceJob },
   "lead.find_website": { run: findWebsitesJob, onFailure: onFindWebsiteFailure },
   "lead.prepare": { run: prepareLeadsJob, onFailure: onPrepareFailure },
   "lead.list_import": { run: listImportJob, onFailure: onListImportFailure },

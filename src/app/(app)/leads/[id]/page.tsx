@@ -24,7 +24,8 @@ import { getLeadCrm, STAGE_LABELS } from "@/server/services/crm";
 import { isWhatsAppActive } from "@/server/services/whatsapp";
 import { ActionButton } from "@/components/action-button";
 import { formatMoney } from "@/lib/cn";
-import { ComplianceReviewForm, LeadContactForm, ManualReplyForm, ResearchLeadButton, ScoreLeadsButton } from "../lead-forms";
+import { CheckEcommerceButton, ComplianceReviewForm, LeadContactForm, ManualReplyForm, ResearchLeadButton, ScoreLeadsButton } from "../lead-forms";
+import { ECOMMERCE_STATUS_LABELS, ECOMMERCE_STATUS_TONE, SITE_ISSUE_LABELS, type SiteIssue } from "@/server/web/ecommerce";
 import { CALL_OUTCOME_LABELS, listLeadCalls } from "@/server/services/calls";
 import { CallResultForm } from "../../calls/call-forms";
 
@@ -359,6 +360,49 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
         {/* Yan panel */}
         <div className="flex min-w-0 flex-col gap-6">
+          <Card>
+            <CardHeader title="Çevrim içi satış durumu" description="Sitenin kodundan ölçülür (AI tahmini değil)." />
+            <CardBody className="flex flex-col gap-3 text-sm">
+              {lead.ecommerceStatus ? (
+                <>
+                  <Badge tone={ECOMMERCE_STATUS_TONE[lead.ecommerceStatus]} className="self-start">{ECOMMERCE_STATUS_LABELS[lead.ecommerceStatus]}</Badge>
+                  <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+                    {lead.ecommercePlatform && (
+                      <>
+                        <dt className="text-text-2">Altyapı</dt>
+                        <dd className="text-text">{lead.ecommercePlatform}</dd>
+                      </>
+                    )}
+                    {lead.marketplaces.length > 0 && (
+                      <>
+                        <dt className="text-text-2">Pazaryeri</dt>
+                        <dd className="text-text">{lead.marketplaces.join(", ")}</dd>
+                      </>
+                    )}
+                    {lead.ecommerceCheckedAt && (
+                      <>
+                        <dt className="text-text-2">Kontrol</dt>
+                        <dd className="text-text-3">{lead.ecommerceCheckedAt.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" })}</dd>
+                      </>
+                    )}
+                  </dl>
+                  {lead.siteIssues.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-text-2">Sitedeki eksikler (satış görüşmesinde kullanın)</p>
+                      <ul className="mt-1 list-disc pl-5 text-xs text-text-2">
+                        {lead.siteIssues.map((i) => (
+                          <li key={i}>{SITE_ISSUE_LABELS[i as SiteIssue] ?? i}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-text-3">Henüz kontrol edilmedi.</p>
+              )}
+              {canWrite && lead.website && <CheckEcommerceButton leadId={lead.id} />}
+            </CardBody>
+          </Card>
           <Card>
             <CardHeader title="Kurumsal iletişim" />
             <CardBody>
